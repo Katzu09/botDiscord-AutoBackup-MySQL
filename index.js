@@ -4,7 +4,6 @@ const path = require("path");
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require("discord.js");
 const cron = require("node-cron");
 const mysqldump = require('mysqldump');
-const cronParser = require('cron-parser');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 let cronJob = null;
