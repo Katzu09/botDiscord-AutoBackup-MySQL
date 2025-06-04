@@ -20,7 +20,7 @@ A Discord bot that automatically backs up your MySQL database and sends the back
 ## Installation
 1. Clone this repository:
    ```bash
-   git clone <repo-url>
+   git clone https://github.com/Katzu09/botDiscord-AutoBackup-MySQL.git
    cd botDiscord-AutoBackup-MySQL
    ```
 2. Install dependencies:
