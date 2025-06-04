@@ -4,6 +4,7 @@ const path = require("path");
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require("discord.js");
 const cron = require("node-cron");
 const mysqldump = require('mysqldump');
+const cronParser = require('cron-parser');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 let cronJob = null;
@@ -57,17 +58,17 @@ async function doBackup() {
         const channel = await client.channels.fetch(process.env.CHANNEL_ID);
         if (channel && channel.isTextBased()) {
             await channel.send({
-                content: `📦 Backup selesai pada ${timestamp}`,
+                content: `📦 Backup completed at ${timestamp}`,
                 files: [backupPath]
             });
         }
 
-        console.log(`✅ Backup sukses: ${backupFile}`);
+        console.log(`✅ Backup successful: ${backupFile}`);
     } catch (err) {
-        console.error("❌ Gagal backup MySQL:", err);
+        console.error("❌ Backup MySQL failed:", err);
         const channel = await client.channels.fetch(process.env.CHANNEL_ID);
         if (channel && channel.isTextBased()) {
-            await channel.send(`❌ Gagal melakukan backup MySQL. Error: \`\`\`${err.message}\`\`\``);
+            await channel.send(`❌ Backup MySQL failed. Error: \`\`\`${err.message}\`\`\``);
         }
     }
 }
@@ -94,30 +95,64 @@ function loadSchedule() {
         doBackup();
     });
 
-    console.log(`📅 Jadwal backup aktif: ${cronString}`);
+    console.log(`📅 Backup schedule active: ${cronString}`);
+}
+
+function cronToHuman(cron) {
+    let human = cron;
+    if (/^\*\/(\d+) \* \* \* \*$/.test(cron)) {
+        const m = cron.match(/^\*\/(\d+) \* \* \* \*$/);
+        human = `Every ${m[1]} minute(s)`;
+    } else if (/^0 \*\/(\d+) \* \* \*$/.test(cron)) {
+        const m = cron.match(/^0 \*\/(\d+) \* \* \*$/);
+        human = `Every ${m[1]} hour(s)`;
+    } else if (/^0 0 \*\/(\d+) \* \*$/.test(cron)) {
+        const m = cron.match(/^0 0 \*\/(\d+) \* \*$/);
+        human = `Every ${m[1]} day(s)`;
+    } else if (cron === "0 0 * * *") {
+        human = "Every day at 00:00";
+    } else if (cron === "0 0 1 * *") {
+        human = "Every 1st day of the month at 00:00";
+    }
+
+    let next = null;
+    let nextStr = '';
+    try {
+        const now = new Date();
+        const expr = require('cron-parser').CronExpressionParser.parse(cron, { currentDate: now });
+        next = expr.next().toDate();
+    } catch (e) {
+        console.error('[cronToHuman] Failed to parse cron:', cron, e.message);
+        nextStr = 'Next backup prediction unavailable';
+    }
+    if (next) {
+        const pad = n => n.toString().padStart(2, '0');
+        nextStr = `Next backup at ${pad(next.getHours())}:${pad(next.getMinutes())} on ${next.getDate()} ${next.toLocaleString('en-US', { month: 'long' })} ${next.getFullYear()}`;
+    }
+    return nextStr ? `${human}\n${nextStr}` : human;
 }
 
 client.once("ready", async () => {
-    console.log(`Bot aktif sebagai ${client.user.tag}`);
+    console.log(`Bot active as ${client.user.tag}`);
     loadSchedule();
 
     const commands = [
         new SlashCommandBuilder()
             .setName("setbackup")
-            .setDescription("Atur interval backup")
+            .setDescription("Set backup interval")
             .addStringOption(opt =>
                 opt.setName("interval")
-                    .setDescription("Misal: 30m, 6h, 1d")
+                    .setDescription("Example: 30m, 6h, 1d")
                     .setRequired(true)
             ),
 
         new SlashCommandBuilder()
             .setName("backupnow")
-            .setDescription("Lakukan backup manual sekarang"),
+            .setDescription("Perform manual backup now"),
 
         new SlashCommandBuilder()
             .setName("schedule")
-            .setDescription("Lihat jadwal backup saat ini")
+            .setDescription("View current backup schedule")
     ];
 
     const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
@@ -127,9 +162,9 @@ client.once("ready", async () => {
             Routes.applicationCommands(client.user.id),
             { body: commands.map(cmd => cmd.toJSON()) }
         );
-        console.log("✅ Slash commands terdaftar.");
+        console.log("✅ Slash commands registered.");
     } catch (err) {
-        console.error("Gagal register command:", err);
+        console.error("Failed to register command:", err);
     }
 });
 
@@ -143,30 +178,32 @@ client.on("interactionCreate", async (interaction) => {
         const cronString = timeToCron(input);
 
         if (!cronString) {
-            await interaction.reply({ content: "❌ Format salah! Contoh: `30m`, `6h`, `1d`", ephemeral: true });
+            await interaction.reply({ content: "❌ Wrong format! Example: 30m, 6h, 1d", ephemeral: true });
             return;
         }
 
         try {
+            await interaction.deferReply({ ephemeral: true });
             fs.writeFileSync(configPath, JSON.stringify({ cron: cronString }, null, 2));
             loadSchedule();
-            await interaction.reply(`✅ Jadwal backup diatur ke setiap ${input}`);
+            await interaction.editReply(`Backup schedule set to every ${input}`);
         } catch (error) {
             console.error("Error writing schedule to file:", error);
-            await interaction.reply({ content: "❌ Gagal menyimpan jadwal. Silakan coba lagi.", ephemeral: true });
+            await interaction.editReply({ content: "Failed to save schedule. Please try again.", ephemeral: true });
         }
 
     } else if (commandName === "backupnow") {
-        await interaction.reply("🔄 Proses backup dimulai...");
+        await interaction.reply("Backup process started...");
         await doBackup();
     } else if (commandName === "schedule") {
         try {
             const raw = fs.readFileSync(configPath, "utf-8");
             const { cron } = JSON.parse(raw);
-            await interaction.reply(`📅 Jadwal backup saat ini: \`${cron}\``);
+            const human = cronToHuman(cron);
+            await interaction.reply(`Current backup schedule: \`${cron}\`\n${human}`);
         } catch (error) {
             console.error("Error reading schedule.json:", error);
-            await interaction.reply({ content: "❌ Gagal membaca jadwal. Mungkin belum diatur.", ephemeral: true });
+            await interaction.reply({ content: "Failed to read schedule. It may not be set yet.", ephemeral: true });
         }
     }
 });
