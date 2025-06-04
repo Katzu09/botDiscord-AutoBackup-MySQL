@@ -12,6 +12,8 @@ let cronJob = null;
 const backupDir = "./backups/";
 const configPath = "./schedule.json";
 
+const WHITELIST_ROLES = ["1345695413113454655", "1340574470712066227"];
+
 if (!fs.existsSync(backupDir)) {
     fs.mkdirSync(backupDir, { recursive: true });
 }
@@ -172,6 +174,26 @@ client.on("interactionCreate", async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName } = interaction;
+
+    if (["setbackup", "backupnow"].includes(commandName)) {
+        if (
+            interaction.guild &&
+            interaction.member &&
+            interaction.member.roles &&
+            interaction.member.roles.cache
+        ) {
+            const allowed = interaction.member.roles.cache.some(role =>
+                WHITELIST_ROLES.includes(role.id)
+            );
+            if (!allowed) {
+                await interaction.reply({ content: "You do not have permission to use this command.", ephemeral: true });
+                return;
+            }
+        } else {
+            await interaction.reply({ content: "This command can only be used in a server.", ephemeral: true });
+            return;
+        }
+    }
 
     if (commandName === "setbackup") {
         const input = interaction.options.getString("interval");
