@@ -1,0 +1,19 @@
+{
+  "name": "kzautobackup",
+  "version": "1.0.0",
+  "description": "Bot to backup database automatically. (By Katzu)",
+  "license": "MIT",
+  "author": "Katzu09",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "discord.js": "^14.19.3",
+    "dotenv": "^16.5.0",
+    "fs": "^0.0.1-security",
+    "mysqldump": "^3.2.0",
+    "node-cron": "^4.1.0"
+  }
+}
